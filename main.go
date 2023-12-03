@@ -12,27 +12,42 @@ import (
 	"time"
 
 	"github.com/FloatTech/NanoBot-Plugin/kanban" // 打印 banner
+	/*
+		_ "github.com/FloatTech/NanoBot-Plugin/plugin/autowithdraw"
+		_ "github.com/FloatTech/NanoBot-Plugin/plugin/b14"
+		_ "github.com/FloatTech/NanoBot-Plugin/plugin/base64gua"
+		_ "github.com/FloatTech/NanoBot-Plugin/plugin/baseamasiro"
+		_ "github.com/FloatTech/NanoBot-Plugin/plugin/chrev"
+		_ "github.com/FloatTech/NanoBot-Plugin/plugin/dish"
+		_ "github.com/FloatTech/NanoBot-Plugin/plugin/emojimix"
+		_ "github.com/FloatTech/NanoBot-Plugin/plugin/fortune"
+		_ "github.com/FloatTech/NanoBot-Plugin/plugin/genshin"
+		_ "github.com/FloatTech/NanoBot-Plugin/plugin/hyaku"
+		_ "github.com/FloatTech/NanoBot-Plugin/plugin/manager"
+		_ "github.com/FloatTech/NanoBot-Plugin/plugin/qqwife"
+		_ "github.com/FloatTech/NanoBot-Plugin/plugin/qunyou"
+		_ "github.com/FloatTech/NanoBot-Plugin/plugin/runcode"
+		_ "github.com/FloatTech/NanoBot-Plugin/plugin/score"
+		_ "github.com/FloatTech/NanoBot-Plugin/plugin/status"
+		_ "github.com/FloatTech/NanoBot-Plugin/plugin/tarot"
+		_ "github.com/FloatTech/NanoBot-Plugin/plugin/wife"
+		_ "github.com/FloatTech/NanoBot-Plugin/plugin/wordle"
 
+	*/
+	// ----------------------- 插件列表 ------------------------ //
 	_ "github.com/FloatTech/NanoBot-Plugin/plugin/autowithdraw"
-	_ "github.com/FloatTech/NanoBot-Plugin/plugin/b14"
-	_ "github.com/FloatTech/NanoBot-Plugin/plugin/base64gua"
-	_ "github.com/FloatTech/NanoBot-Plugin/plugin/baseamasiro"
-	_ "github.com/FloatTech/NanoBot-Plugin/plugin/chrev"
-	_ "github.com/FloatTech/NanoBot-Plugin/plugin/dish"
+	_ "github.com/FloatTech/NanoBot-Plugin/plugin/manager"
+
+	_ "github.com/FloatTech/NanoBot-Plugin/plugin/ygo"
+
 	_ "github.com/FloatTech/NanoBot-Plugin/plugin/emojimix"
 	_ "github.com/FloatTech/NanoBot-Plugin/plugin/fortune"
-	_ "github.com/FloatTech/NanoBot-Plugin/plugin/genshin"
-	_ "github.com/FloatTech/NanoBot-Plugin/plugin/hyaku"
-	_ "github.com/FloatTech/NanoBot-Plugin/plugin/manager"
-	_ "github.com/FloatTech/NanoBot-Plugin/plugin/qqwife"
-	_ "github.com/FloatTech/NanoBot-Plugin/plugin/qunyou"
+	_ "github.com/FloatTech/NanoBot-Plugin/plugin/mcfish"
 	_ "github.com/FloatTech/NanoBot-Plugin/plugin/runcode"
-	_ "github.com/FloatTech/NanoBot-Plugin/plugin/score"
-	_ "github.com/FloatTech/NanoBot-Plugin/plugin/status"
-	_ "github.com/FloatTech/NanoBot-Plugin/plugin/tarot"
 	_ "github.com/FloatTech/NanoBot-Plugin/plugin/wife"
 	_ "github.com/FloatTech/NanoBot-Plugin/plugin/wordle"
 
+	_ "github.com/FloatTech/NanoBot-Plugin/plugin/qunyou"
 	// -----------------------以下为内置依赖，勿动------------------------ //
 	nano "github.com/fumiama/NanoBot"
 	"github.com/sirupsen/logrus"

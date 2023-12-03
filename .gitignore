@@ -15,4 +15,4 @@
 # vendor/
 
 /data
-config.yaml
+config*.yaml
