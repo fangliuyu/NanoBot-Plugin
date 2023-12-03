@@ -16,3 +16,4 @@
 
 /data
 config*.yaml
+/.vscode

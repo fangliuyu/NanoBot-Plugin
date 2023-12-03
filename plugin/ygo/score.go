@@ -43,7 +43,7 @@ type score struct {
 
 // 用户数据信息
 type userdata struct {
-	Uid        uint64 // `Userid`
+	Uid        int64  // `Userid`
 	UserName   string // `User`
 	UpdatedAt  int64  // `签到时间`
 	Continuous int    // `连续签到次数`
@@ -65,8 +65,8 @@ var (
 	engine    = nano.Register("score", &ctrl.Options[*nano.Ctx]{
 		DisableOnDefault:  false,
 		Brief:             "签到",
+		Help:              "- 签到\n | 获得签到背景\n- 查看等级排名\n注:为跨群排名\n- 查看我的钱包\n- 查看钱包排名\n注:为本群排行，若群人数太多不建议使用该功能!!!",
 		PrivateDataFolder: "score",
-		Help:              "- 签到\n- 获得签到背景",
 	})
 	cachePath = engine.DataFolder() + "cache/"
 )
@@ -97,29 +97,17 @@ func init() {
 		return true
 	})
 
-	engine.OnMessageFullMatchGroup([]string{"签到", "打卡"}, getdb).SetBlock(true).Handle(func(ctx *nano.Ctx) {
-		uidinfo := ctx.Message.Author.ID
-		if uidinfo == "" {
-			_, _ = ctx.SendPlainMessage(false, "ERROR: 未获取到用户uid")
-			return
-		}
-		uid, _ := strconv.ParseUint(uidinfo, 10, 64)
+	engine.OnMessageFullMatchGroup([]string{"打卡", "签到"}, getdb, nano.OnlyChannel).SetBlock(true).Handle(func(ctx *nano.Ctx) {
+		uid := int64(ctx.UserID())
 
 		userinfo := scoredata.getData(uid)
 		userinfo.Uid = uid
-		uInfo, err := ctx.GetGuildMemberOf(ctx.Message.GuildID, uidinfo)
-		if err != nil {
-			return
-		}
-		nick := uInfo.Nick
-		if nick == "" {
-			nick = uInfo.User.Username
-		}
+		nick := ctx.Message.Author.Username
 		userinfo.UserName = strings.TrimSpace(nick)
-		userinfo.UserPic = uInfo.User.Avatar
+		userinfo.UserPic = ctx.Message.Author.Avatar
 
 		lasttime := time.Unix(userinfo.UpdatedAt, 0)
-		score := wallet.GetWalletOf(int64(uid))
+		score := wallet.GetWalletOf(uid)
 		// 判断是否已经签到过了
 		if time.Now().Format("2006/01/02") == lasttime.Format("2006/01/02") {
 			if userinfo.Picname == "" {
@@ -136,7 +124,7 @@ func init() {
 					}
 				}
 			}
-			data, err := drawimagePro(&userinfo, score, 0)
+			data, err := drawimageCH(&userinfo, score, 0)
 			if err != nil {
 				_, _ = ctx.SendPlainMessage(false, "[ERROR]:", err)
 				return
@@ -154,6 +142,7 @@ func init() {
 				return
 			}
 			if picFile == "" {
+				_, _ = ctx.SendPlainMessage(false, "[ERROR]:图片抽取为空")
 				return
 			}
 			userinfo.Picname = picFile
@@ -191,7 +180,99 @@ func init() {
 		}()
 		// 生成签到图片
 		wg.Wait()
-		data, err := drawimagePro(&userinfo, score, add)
+		data, err := drawimageCH(&userinfo, score, add)
+		if err != nil {
+			_, _ = ctx.SendPlainMessage(false, "[ERROR]:", err)
+			return
+		}
+		ctx.SendImageBytes(data, true)
+	})
+	engine.OnMessageFullMatchGroup([]string{"打卡", "签到"}, getdb, nano.OnlyQQ).SetBlock(true).Handle(func(ctx *nano.Ctx) {
+		fmt.Println(ctx.Message.Author)
+		uid := int64(nano.DigestID(ctx.Message.Author.ID))
+
+		userinfo := scoredata.getData(uid)
+		userinfo.Uid = uid
+
+		lasttime := time.Unix(userinfo.UpdatedAt, 0)
+		score := wallet.GetWalletOf(uid)
+		// 判断是否已经签到过了
+		if time.Now().Format("2006/01/02") == lasttime.Format("2006/01/02") {
+			if userinfo.Picname == "" {
+				picFile, err := initPic()
+				if err != nil {
+					_, _ = ctx.SendPlainMessage(false, "[ERROR]:", err)
+					return
+				}
+				if picFile != "" {
+					userinfo.Picname = picFile
+					if err := scoredata.setData(userinfo); err != nil {
+						ctx.SendPlainMessage(true, "签到记录失败。\n", err)
+						return
+					}
+				}
+			}
+			data, err := drawimageQQ(&userinfo, score, 0)
+			if err != nil {
+				_, _ = ctx.SendPlainMessage(false, "[ERROR]:", err)
+				return
+			}
+			ctx.SendChain(nano.ReplyTo(ctx.Message.ID), nano.Text("今天已经签到过了"), nano.ImageBytes(data))
+			return
+		}
+		ex := 0
+		if score == 0 && userinfo.UpdatedAt == 0 {
+			ex = 100
+		}
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			picFile, err := initPic()
+			if err != nil {
+				_, _ = ctx.SendPlainMessage(false, "[ERROR]:", err)
+				return
+			}
+			if picFile == "" {
+				_, _ = ctx.SendPlainMessage(false, "[ERROR]:图片抽取为空")
+				return
+			}
+			userinfo.Picname = picFile
+			if err := scoredata.setData(userinfo); err != nil {
+				ctx.SendPlainMessage(true, "签到记录失败。\n", err)
+				return
+			}
+		}()
+		add := rand.Intn(10 + userinfo.Level/2)
+		wg.Add(1)
+		go func() {
+			// 更新数据
+			subtime := time.Since(lasttime).Hours()
+			if subtime > 48 {
+				userinfo.Continuous = 1
+			} else {
+				userinfo.Continuous += 1
+				add = int(math.Min(5, float64(userinfo.Continuous)))
+			}
+			userinfo.UpdatedAt = time.Now().Unix()
+			if userinfo.Level < scoreMax {
+				userinfo.Level += add
+			}
+			defer wg.Done()
+			if err := scoredata.setData(userinfo); err != nil {
+				ctx.SendPlainMessage(true, "签到记录失败。\n", err)
+				return
+			}
+			level, _ := getLevel(userinfo.Level)
+			if err := wallet.InsertWalletOf(int64(uid), ex+add+level*5); err != nil {
+				ctx.SendPlainMessage(true, "货币记录失败。\n", err)
+				return
+			}
+			score = wallet.GetWalletOf(int64(uid))
+		}()
+		// 生成签到图片
+		wg.Wait()
+		data, err := drawimageQQ(&userinfo, score, add)
 		if err != nil {
 			_, _ = ctx.SendPlainMessage(false, "[ERROR]:", err)
 			return
@@ -200,12 +281,7 @@ func init() {
 	})
 	engine.OnMessageFullMatch("获得签到背景").Limit(ctxext.LimitByGroup).SetBlock(true).
 		Handle(func(ctx *nano.Ctx) {
-			uidinfo := ctx.Message.Author.ID
-			if uidinfo == "" {
-				_, _ = ctx.SendPlainMessage(false, "ERROR: 未获取到用户uid")
-				return
-			}
-			uid, _ := strconv.ParseUint(uidinfo, 10, 64)
+			uid := int64(ctx.UserID())
 			userinfo := scoredata.getData(uid)
 			picFile := userinfo.Picname
 			if file.IsNotExist(picFile) {
@@ -217,10 +293,10 @@ func init() {
 }
 
 // 获取签到数据
-func (sdb *score) getData(uid uint64) (userinfo userdata) {
+func (sdb *score) getData(uid int64) (userinfo userdata) {
 	sdb.Lock()
 	defer sdb.Unlock()
-	_ = sdb.db.Find("score", &userinfo, "where uid = "+strconv.FormatUint(uid, 10))
+	_ = sdb.db.Find("score", &userinfo, "where uid = "+strconv.FormatInt(uid, 10))
 	return
 }
 
@@ -241,15 +317,15 @@ type datajson struct {
 func initPic() (picFile string, err error) {
 	// defer process.SleepAbout1sTo2s()
 	data, err := web.GetData("https://img.moehu.org/pic.php?return=json&id=yu-gi-oh&num=1")
-	if err != nil { // 如果api跑路了抽本地
+	if err != nil || len(data) <= 0 { // 如果api跑路了抽本地
 		logrus.Warnln("[score] 访问api失败,将从本地抽取:", err)
-		return randFile(3)
+		return otherPic()
 	}
 	parsed := datajson{}
 	err = json.Unmarshal(data, &parsed)
 	if err != nil {
 		logrus.Warnln("[score] 解析api失败,将从本地抽取:", err)
-		return randFile(3)
+		return otherPic()
 	}
 	if len(parsed.Pic) == 0 {
 		return "", errors.New("no picData")
@@ -258,6 +334,15 @@ func initPic() (picFile string, err error) {
 	picFile = cachePath + names[len(names)-1]
 	if file.IsExist(picFile) {
 		return picFile, nil
+	}
+	data, err = web.GetData(parsed.Pic[0])
+	if err != nil { // 如果api跑路了抽本地
+		logrus.Warnln("[score] 访问api失败,将从本地抽取:", err)
+		return otherPic()
+	}
+	if len(data) <= 0 { // 如果api跑路了抽本地
+		logrus.Warnln("[score] 访问api失败,将从本地抽取:")
+		return otherPic()
 	}
 	mu.Lock()
 	defer mu.Unlock()
@@ -271,8 +356,11 @@ func initPic() (picFile string, err error) {
 
 // 下载图片
 func otherPic() (picFile string, err error) {
-	apiList := []string{"http://81.70.100.130/api/DmImgS.php", "http://81.70.100.130/api/DmImg.php", "http://81.70.100.130/api/acgimg.php"}
-	picFile = "other/" + time.Now().Format("20060102150405000") + ".jpeg"
+	apiList := []string{"http://81.70.100.130/api/acgimg.php"}
+	picFile = cachePath + "other/" + time.Now().Format("20060102150405000") + ".jpeg"
+	if file.IsExist(picFile) {
+		return picFile, nil
+	}
 	mu.Lock()
 	defer mu.Unlock()
 	err = file.DownloadTo(apiList[rand.Intn(len(apiList))], picFile)
@@ -304,7 +392,7 @@ func randFile(indexMax int) (string, error) {
 	return "", errors.New("不存在本地签到图片")
 }
 
-func drawimagePro(userinfo *userdata, score, add int) (data []byte, err error) {
+func drawimageCH(userinfo *userdata, score, add int) (data []byte, err error) {
 	if userinfo.Picname == "" {
 		err = errors.New("[ERROR]:签到图片获取失败")
 		return
@@ -479,6 +567,126 @@ func drawimagePro(userinfo *userdata, score, add int) (data []byte, err error) {
 	// 生成图片
 	return imgfactory.ToBytes(canvas.Image())
 }
+
+func drawimageQQ(userinfo *userdata, score, add int) (data []byte, err error) {
+	if userinfo.Picname == "" {
+		err = errors.New("[ERROR]:签到图片获取失败")
+		return
+	}
+	back, err := gg.LoadImage(userinfo.Picname)
+	if err != nil {
+		return
+	}
+	imgDX := back.Bounds().Dx()
+	imgDY := back.Bounds().Dy()
+	backDX := 1500
+
+	imgDW := backDX - 100
+	scale := float64(imgDW) / float64(imgDX)
+	imgDH := int(float64(imgDY) * scale)
+	back = imgfactory.Size(back, imgDW, imgDH).Image()
+
+	backDY := imgDH + 500
+	canvas := gg.NewContext(backDX, backDY)
+	// 放置毛玻璃背景
+	backBlurW := float64(imgDW) * (float64(backDY) / float64(imgDH))
+	canvas.DrawImageAnchored(imaging.Blur(imgfactory.Size(back, int(backBlurW), backDY).Image(), 8), backDX/2, backDY/2, 0.5, 0.5)
+	canvas.DrawRectangle(1, 1, float64(backDX), float64(backDY))
+	canvas.SetLineWidth(3)
+	canvas.SetRGBA255(255, 255, 255, 100)
+	canvas.StrokePreserve()
+	canvas.SetRGBA255(255, 255, 255, 140)
+	canvas.Fill()
+	// 信息框
+	canvas.DrawRoundedRectangle(20, 20, 1500-20-20, 450-20, (450-20)/5)
+	canvas.SetLineWidth(6)
+	canvas.SetDash(20.0, 10.0, 0)
+	canvas.SetRGBA255(255, 255, 255, 255)
+	canvas.Stroke()
+
+	canvas.SetRGB(0, 0, 0)
+	fontdata, err := file.GetLazyData(text.BoldFontFile, nano.Md5File, false)
+	if err != nil {
+		return
+	}
+
+	// level
+	if err = canvas.ParseFontFace(fontdata, 72); err != nil {
+		return
+	}
+	level, nextLevelScore := getLevel(userinfo.Level)
+	if level == -1 {
+		err = errors.New("计算等级出现了问题")
+		return
+	}
+	rank := levelrank[level]
+	textW, _ := canvas.MeasureString(rank)
+	levelX := float64(backDX) * 4 / 5
+	canvas.DrawRoundedRectangle(levelX, 50, textW*1.2, 200, 200/5)
+	canvas.SetLineWidth(3)
+	canvas.SetRGBA255(0, 0, 0, 100)
+	canvas.StrokePreserve()
+	canvas.SetRGBA255(255, 255, 255, 100)
+	canvas.Fill()
+	canvas.DrawRoundedRectangle(levelX, 50, textW*1.2, 100, 200/5)
+	canvas.SetLineWidth(3)
+	canvas.SetRGBA255(0, 0, 0, 100)
+	canvas.StrokePreserve()
+	canvas.SetRGBA255(255, 255, 255, 100)
+	canvas.Fill()
+	canvas.SetRGBA255(0, 0, 0, 255)
+	canvas.DrawStringAnchored(levelrank[level], levelX+textW*1.2/2, 50+50, 0.5, 0.5)
+	canvas.DrawStringAnchored(fmt.Sprintf("LV%d", level), levelX+textW*1.2/2, 50+100+50, 0.5, 0.5)
+
+	if err = canvas.ParseFontFace(fontdata, 90); err != nil {
+		return
+	}
+	_, textH := canvas.MeasureString(rank)
+	if add == 0 {
+		canvas.DrawStringAnchored(fmt.Sprintf("你在 %s 签了到", time.Unix(userinfo.UpdatedAt, 0).Format("15:04:05")), 60, 50+textH/2, 0, 0.5)
+		canvas.DrawStringAnchored(fmt.Sprintf("已连签 %d 天,真棒", userinfo.Continuous), 60, 50+textH*1.5+textH/2, 0, 0.5)
+		canvas.DrawStringAnchored(fmt.Sprintf("当前的总资产为 %d", score), 60, 50+textH*1.5+textH*1.5+textH/2, 0, 0.5)
+	} else {
+		canvas.DrawStringAnchored(getHourWord(time.Unix(userinfo.UpdatedAt, 0)), 60, 50+textH/2, 0, 0.5)
+		canvas.DrawStringAnchored(fmt.Sprintf("已连签 %d 天", userinfo.Continuous), 60, 50+textH*1.5+textH/2, 0, 0.5)
+		canvas.DrawStringAnchored(fmt.Sprintf("总资产(+%d): %d", add+level*5, score), 60, 50+textH*1.5+textH*1.5+textH/2, 0, 0.5)
+	}
+	// 绘制等级进度条
+	if err = canvas.ParseFontFace(fontdata, 50); err != nil {
+		return
+	}
+	_, textH = canvas.MeasureString("/")
+	switch {
+	case userinfo.Level < scoreMax && add == 0:
+		canvas.DrawStringAnchored(fmt.Sprintf("%d/%d", userinfo.Level, nextLevelScore), float64(backDX)/2, 455-textH, 0.5, 0.5)
+	case userinfo.Level < scoreMax:
+		canvas.DrawStringAnchored(fmt.Sprintf("(%d+%d)/%d", userinfo.Level-add, add, nextLevelScore), float64(backDX)/2, 455-textH, 0.5, 0.5)
+	default:
+		canvas.DrawStringAnchored("Max/Max", float64(backDX)/2, 455-textH, 0.5, 0.5)
+
+	}
+	// 创建彩虹条
+	grad := gg.NewLinearGradient(0, 500, 1500, 300)
+	grad.AddColorStop(0, color.RGBA{G: 255, A: 255})
+	grad.AddColorStop(0.35, color.RGBA{B: 255, A: 255})
+	grad.AddColorStop(0.5, color.RGBA{R: 255, A: 255})
+	grad.AddColorStop(0.65, color.RGBA{B: 255, A: 255})
+	grad.AddColorStop(1, color.RGBA{G: 255, A: 255})
+	canvas.SetStrokeStyle(grad)
+	canvas.SetLineWidth(7)
+	// 设置长度
+	gradMax := 1300.0
+	LevelLength := gradMax * (float64(userinfo.Level) / float64(nextLevelScore))
+	canvas.MoveTo((float64(backDX)-LevelLength)/2, 450)
+	canvas.LineTo((float64(backDX)+LevelLength)/2, 450)
+	canvas.ClosePath()
+	canvas.Stroke()
+	// 放置图片
+	canvas.DrawImageAnchored(back, backDX/2, imgDH/2+475, 0.5, 0.5)
+	// 生成图片
+	return imgfactory.ToBytes(canvas.Image())
+}
+
 func getLevel(count int) (int, int) {
 	switch {
 	case count < 5:
@@ -494,4 +702,22 @@ func getLevel(count int) (int, int) {
 		}
 	}
 	return -1, -1
+}
+
+func getHourWord(t time.Time) string {
+	h := t.Hour()
+	switch {
+	case 6 <= h && h < 12:
+		return "早上好"
+	case 12 <= h && h < 14:
+		return "中午好"
+	case 14 <= h && h < 19:
+		return "下午好"
+	case 19 <= h && h < 24:
+		return "晚上好"
+	case 0 <= h && h < 6:
+		return "凌晨好"
+	default:
+		return ""
+	}
 }
